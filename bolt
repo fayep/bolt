@@ -59,9 +59,9 @@ room = sys.argv[1]
 setto = sys.argv[2]
 bright = None
 if ',' in setto:
-    bright = setto[setto.index(','):]
-    setto = setto[0:setto.index(',')]
-setto = (setto in config['colors']) and config['colors'][setto] or setto
+    bright = setto[setto.rindex(','):]
+    setto = setto[0:setto.rindex(',')]
+setto = (setto in config['colors']) and config['colors'][setto] or setto+','
 if bright is not None:
     setto = setto[0:setto.rindex(',')]+bright
 # If we know what devices are in the room
