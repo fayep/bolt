@@ -1,0 +1,85 @@
+#!/usr/bin/python3
+import yaml
+import sys
+from gattlib import DiscoveryService, GATTRequester
+
+class MFBolt(object):
+    def __init__(self, address):
+        self.requester = GATTRequester(address, False)
+        self.address = address
+        self.primary = None
+
+    def connect(self):
+        if not self.requester.is_connected():
+            self.requester.connect(True)
+
+    def disconnect(self):
+        if self.requester.is_connected():
+            self.requester.disconnect()
+
+    def discover_primary(self):
+        print("Discovering...", end='')
+        sys.stdout.flush()
+        self.primary = self.requester.discover_primary()
+        self.chars = dict(map(lambda x: (x['uuid'][4:8], self.discover_characteristics(x['start'],x['end'])), self.primary))
+        print("OK!")
+
+    def discover_characteristics(self, start, end):
+        array=self.requester.discover_characteristics(start,end,"")
+        return dict(map(lambda x:(x['uuid'][4:8],x),array))
+
+    def get_value(self,k1,k2):
+        self.connect()
+        if self.primary is None:
+            self.discover_primary()
+        return self.requester.read_by_handle(self.chars[k1][k2]['value_handle'])[0]
+
+    def get_light(self):
+        self.connect()
+        return self.requester.read_by_handle(18)[0]
+
+    def pad(self, value):
+        return value+(","*18)[len(value):18]
+
+    def set_light(self, value):
+        self.connect()
+        return self.requester.write_by_handle(18, self.pad(value))
+
+    def set_value(self,k1,k2,v):
+        self.connect()
+        if self.primary is None:
+            self.discover_primary()
+        self.requester.write_by_handle(self.chars[k1][k2]['value_handle'],self.pad(v))
+
+
+f=open('config.yml','r')
+config = yaml.load(f.read())
+
+room = sys.argv[1]
+setto = sys.argv[2]
+bright = None
+if ',' in setto:
+    bright = setto[setto.index(','):]
+    setto = setto[0:setto.index(',')]
+setto = (setto in config['colors']) and config['colors'][setto] or setto
+if bright is not None:
+    setto = setto[0:setto.rindex(',')]+bright
+# If we know what devices are in the room
+# Use them.  If not Detect them.
+if room in config['bolts']:
+    bolts = config['bolts'][room]
+else:
+    service = DiscoveryService("hci0")
+    devices = service.discover(2)
+    bolts = map(lambda x:x[0], filter(lambda x: x[1] == "MFBOLT", devices.items()))
+
+# Make sure we have a list
+bolts = (type(bolts) is list) and bolts or [bolts]
+# Resolve any references
+bolts = map(lambda x:(x in config['bolts']) and config['bolts'][x] or x, bolts)
+
+current = map(lambda x:MFBolt(x), bolts)
+for bolt in current:
+    print("{}, {}->{}".format(bolt.address, bolt.get_light().rstrip(','),setto))
+    bolt.set_light(setto)
+    #bolt.disconnect()
